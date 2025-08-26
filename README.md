@@ -8,16 +8,18 @@ headless mode.
 ## Headless mode
 
 The script accepts an `--apply` flag to apply saved curves without launching the
-GUI:
+GUI. A long-running daemon can be started with `--daemon`, which periodically
+sets fan and pump speeds based on the configured curves:
 
 ```bash
-liquidgui --apply
+liquidgui --apply        # apply once and exit
+liquidgui --daemon       # run continuously
 ```
 
 ## Service integration
 
 Example service files are provided for systemd and SysV init systems. Copy the
-appropriate file and enable the service to apply curves automatically at boot.
+appropriate file and enable the service to run the daemon automatically at boot.
 
 ### systemd
 
