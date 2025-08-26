@@ -1,7 +1,9 @@
 # liquidgui
 
-GUI for Liquidctl fan and pump curves. The tool can also apply previously
-saved curves in a headless mode.
+GUI for Liquidctl fan and pump curves. The tool can enumerate devices with
+`liquidctl list` and lets you select multiple fan or pump channels. Selected
+targets are saved so the tool can also apply previously saved curves in a
+headless mode.
 
 ## Headless mode
 
