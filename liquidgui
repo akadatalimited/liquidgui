@@ -10,6 +10,7 @@ import numpy as np
 import os
 import json
 import shutil
+import queue
 
 try:
     import matplotlib
@@ -47,15 +48,12 @@ def apply_curve(fan_curve, pump_curve):
     subprocess.run([LIQUIDCTL_PATH, "set", "fan", "speed"] + fan_curve)
     subprocess.run([LIQUIDCTL_PATH, "set", "pump", "speed"] + pump_curve)
 
-def refresh_status(text_widget):
+def refresh_status(status_queue):
     while True:
         status = get_status()
         cpu_temp = get_cpu_temp()
         full_status = f"{status}\n\nCPU Temp:\n{cpu_temp}"
-        text_widget.config(state=tk.NORMAL)
-        text_widget.delete(1.0, tk.END)
-        text_widget.insert(tk.END, full_status)
-        text_widget.config(state=tk.DISABLED)
+        status_queue.put(full_status)
         time.sleep(5)
 
 def get_curve_from_plot(points):
@@ -174,6 +172,20 @@ def main():
     status_text = tk.Text(status_frame, height=12, width=70, state=tk.DISABLED)
     status_text.pack(fill=tk.BOTH, expand=True)
 
+    status_queue = queue.Queue()
+
+    def update_status_text():
+        try:
+            while True:
+                full_status = status_queue.get_nowait()
+                status_text.config(state=tk.NORMAL)
+                status_text.delete(1.0, tk.END)
+                status_text.insert(tk.END, full_status)
+                status_text.config(state=tk.DISABLED)
+        except queue.Empty:
+            pass
+        root.after(100, update_status_text)
+
     curve_frame = ttk.LabelFrame(root, text="Fan and Pump Curves")
     curve_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
@@ -199,7 +211,8 @@ def main():
     apply_button = ttk.Button(root, text="Apply Curves", command=on_apply_plot)
     apply_button.pack(pady=5)
 
-    threading.Thread(target=refresh_status, args=(status_text,), daemon=True).start()
+    threading.Thread(target=refresh_status, args=(status_queue,), daemon=True).start()
+    root.after(0, update_status_text)
 
     root.mainloop()
 
