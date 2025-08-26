@@ -9,6 +9,7 @@ import time
 import numpy as np
 import os
 import json
+import shutil
 
 try:
     import matplotlib
@@ -20,9 +21,15 @@ except ImportError:
 
 CONFIG_PATH = os.path.expanduser("~/.config/liquidctl_curves.json")
 
+LIQUIDCTL_PATH = shutil.which("liquidctl")
+if LIQUIDCTL_PATH is None:
+    raise FileNotFoundError(
+        "liquidctl executable not found. Please install liquidctl and ensure it is in your PATH."
+    )
+
 def get_status():
     try:
-        output = subprocess.check_output(["/usr/bin/liquidctl", "status"], text=True)
+        output = subprocess.check_output([LIQUIDCTL_PATH, "status"], text=True)
         return output
     except subprocess.CalledProcessError as e:
         return f"Error: {e}"
@@ -37,8 +44,8 @@ def get_cpu_temp():
         return f"Error reading CPU temp: {e}"
 
 def apply_curve(fan_curve, pump_curve):
-    subprocess.run(["/usr/bin/liquidctl", "set", "fan", "speed"] + fan_curve)
-    subprocess.run(["/usr/bin/liquidctl", "set", "pump", "speed"] + pump_curve)
+    subprocess.run([LIQUIDCTL_PATH, "set", "fan", "speed"] + fan_curve)
+    subprocess.run([LIQUIDCTL_PATH, "set", "pump", "speed"] + pump_curve)
 
 def refresh_status(text_widget):
     while True:
