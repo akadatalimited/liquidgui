@@ -8,9 +8,11 @@ MODULE = curves.py
 SYSTEMD_SERVICE = etc/systemd/system/liquidgui.service
 INIT_SCRIPT = etc/init.d/liquidgui
 
-.PHONY: all install uninstall test clean
+PYINSTALLER ?= pyinstaller
 
-all: test
+.PHONY: all install uninstall test clean binary
+
+all: test binary
 
 install:
 	install -Dm755 $(SCRIPT) $(DESTDIR)$(BINDIR)/$(SCRIPT)
@@ -29,6 +31,9 @@ PYTHON ?= python3
 test:
 	$(PYTHON) -m py_compile $(SCRIPT) $(MODULE)
 
+binary:
+	$(PYINSTALLER) --onefile $(SCRIPT)
+
 clean:
-	rm -rf __pycache__
+	rm -rf __pycache__ build dist
 	find . -name "*.pyc" -delete
