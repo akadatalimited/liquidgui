@@ -16,6 +16,20 @@ liquidgui --apply        # apply once and exit
 liquidgui --daemon       # run continuously
 ```
 
+## Standalone binary
+
+A self-contained executable can be produced with [PyInstaller](https://pyinstaller.org/):
+
+```bash
+make binary
+```
+
+The resulting binary is placed in `dist/liquidgui` and can be run directly:
+
+```bash
+./dist/liquidgui --apply
+```
+
 ## Service integration
 
 Example service files are provided for systemd and SysV init systems. Copy the
