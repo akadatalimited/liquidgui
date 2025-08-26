@@ -1,25 +1,14 @@
 #!/usr/bin/env python3
 
-import subprocess
-import threading
-import math
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-import time
-import numpy as np
-import os
+"""GUI and headless interface for liquidctl fan curves."""
+
+import argparse
 import json
+import os
 import shutil
-import queue
+import subprocess
 
-try:
-    import matplotlib
-    matplotlib.use("TkAgg")
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    import matplotlib.pyplot as plt
-except ImportError:
-    raise ImportError("matplotlib is required for graphical fan curve editing")
-
+# Path where GUI stores curves
 CONFIG_PATH = os.path.expanduser("~/.config/liquidctl_curves.json")
 
 LIQUIDCTL_PATH = shutil.which("liquidctl")
@@ -28,129 +17,186 @@ if LIQUIDCTL_PATH is None:
         "liquidctl executable not found. Please install liquidctl and ensure it is in your PATH."
     )
 
-def get_status():
-    try:
-        output = subprocess.check_output([LIQUIDCTL_PATH, "status"], text=True)
-        return output
-    except subprocess.CalledProcessError as e:
-        return f"Error: {e}"
-
-def get_cpu_temp():
-    try:
-        output = subprocess.check_output(["sensors"], text=True)
-        lines = output.splitlines()
-        temps = [line for line in lines if "Package id 0:" in line or "Tctl:" in line or "CPU temp" in line]
-        return "\n".join(temps)
-    except subprocess.CalledProcessError as e:
-        return f"Error reading CPU temp: {e}"
 
 def apply_curve(fan_curve, pump_curve):
-    subprocess.run([LIQUIDCTL_PATH, "set", "fan", "speed"] + fan_curve)
-    subprocess.run([LIQUIDCTL_PATH, "set", "pump", "speed"] + pump_curve)
+    """Send curves to the controller using liquidctl."""
 
-def refresh_status(status_queue):
-    while True:
-        status = get_status()
-        cpu_temp = get_cpu_temp()
-        full_status = f"{status}\n\nCPU Temp:\n{cpu_temp}"
-        status_queue.put(full_status)
-        time.sleep(5)
+    subprocess.run([LIQUIDCTL_PATH, "set", "fan", "speed"] + fan_curve, check=False)
+    subprocess.run([LIQUIDCTL_PATH, "set", "pump", "speed"] + pump_curve, check=False)
+
 
 def get_curve_from_plot(points):
+    """Convert point pairs into liquidctl CLI arguments."""
+
     return [str(int(x)) for pair in points for x in pair]
 
-def on_apply_plot():
-    fan_vals = get_curve_from_plot(fan_points)
-    pump_vals = get_curve_from_plot(pump_points)
-    apply_curve(fan_vals, pump_vals)
-    save_curve_config()
-    messagebox.showinfo("Liquidctl", "Fan and pump curves applied and saved.")
-
-def bezier_curve(points, n=200):
-    points = np.array(points)
-    x, y = points[:,0], points[:,1]
-    t = np.linspace(0, 1, n)
-    polynomial_array = [math.comb(len(x) - 1, i) * (1 - t) ** (len(x) - 1 - i) * t ** i for i in range(len(x))]
-    curve_x = sum(p * xi for p, xi in zip(polynomial_array, x))
-    curve_y = sum(p * yi for p, yi in zip(polynomial_array, y))
-    return curve_x, curve_y
-
-def draw_curve(ax, points, label):
-    bx, by = bezier_curve(points)
-    ax.clear()
-    ax.plot(bx, by, label=label)
-    ax.plot(*zip(*points), 'o', color='orange')
-    ax.set_xlabel("Temperature (\u00b0C")
-    ax.set_ylabel("Speed (%)")
-    ax.set_ylim(0, 110)
-    ax.set_xlim(20, 90)
-    ax.legend(loc="upper left")
-    ax.grid(True)
-    for i, (x, y) in enumerate(points):
-        ax.annotate(f"{y}%", (x, y + 2), ha='center')
-
-def enforce_monotonic_curve(points):
-    for i in range(1, len(points)):
-        if points[i][1] < points[i - 1][1]:
-            points[i] = (points[i][0], points[i - 1][1])
-
-def propagate_change(points, idx, new_y):
-    points[idx] = (points[idx][0], new_y)
-    for i in range(idx + 1, len(points)):
-        if points[i][1] < new_y:
-            points[i] = (points[i][0], new_y)
-    for i in range(idx - 1, -1, -1):
-        if points[i][1] > new_y:
-            points[i] = (points[i][0], new_y)
-
-def on_press(event):
-    global dragging_point
-    for ax, points in ((ax1, fan_points), (ax2, pump_points)):
-        if event.inaxes != ax:
-            continue
-        for i, (x, y) in enumerate(points):
-            if abs(event.xdata - x) < 2 and abs(event.ydata - y) < 5:
-                dragging_point = (ax, points, i)
-                return
-
-def on_release(event):
-    global dragging_point
-    dragging_point = None
-
-def on_motion(event):
-    if dragging_point is None:
-        return
-    ax, points, idx = dragging_point
-    if event.inaxes != ax or event.ydata is None:
-        return
-    new_y = min(max(int(event.ydata), 0), 100)
-    propagate_change(points, idx, new_y)
-    enforce_monotonic_curve(points)
-    draw_curve(ax, points, ax.get_title())
-    canvas.draw()
-
-def generate_even_points(start_temp=30, end_temp=80, count=15, base_speed=30, top_speed=100):
-    step = (end_temp - start_temp) // (count - 1)
-    return [(start_temp + i * step, base_speed + ((top_speed - base_speed) * i) // (count - 1)) for i in range(count)]
-
-def save_curve_config():
-    config = {
-        "fan": fan_points,
-        "pump": pump_points
-    }
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, 'w') as f:
-        json.dump(config, f)
 
 def load_curve_config():
+    """Load saved fan and pump curves from disk."""
+
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH) as f:
             data = json.load(f)
             return data.get("fan"), data.get("pump")
     return None, None
 
-def main():
-    global ax1, ax2, fan_points, pump_points, canvas, dragging_point
+
+def apply_saved_curves():
+    """Apply previously saved curves without launching the GUI."""
+
+    fan_points, pump_points = load_curve_config()
+    if not fan_points or not pump_points:
+        print(f"No curve configuration found at {CONFIG_PATH}")
+        return
+
+    fan_vals = get_curve_from_plot(fan_points)
+    pump_vals = get_curve_from_plot(pump_points)
+    apply_curve(fan_vals, pump_vals)
+
+
+def run_gui():
+    """Start the graphical editor."""
+
+    import math
+    import queue
+    import threading
+    import time
+    from tkinter import filedialog, messagebox, ttk
+    import tkinter as tk
+
+    import numpy as np
+
+    try:
+        import matplotlib
+        matplotlib.use("TkAgg")
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        import matplotlib.pyplot as plt
+    except ImportError as exc:  # pragma: no cover - GUI dependency
+        raise ImportError(
+            "matplotlib is required for graphical fan curve editing"
+        ) from exc
+
+    def get_status():
+        try:
+            output = subprocess.check_output([LIQUIDCTL_PATH, "status"], text=True)
+            return output
+        except subprocess.CalledProcessError as e:
+            return f"Error: {e}"
+
+    def get_cpu_temp():
+        try:
+            output = subprocess.check_output(["sensors"], text=True)
+            lines = output.splitlines()
+            temps = [
+                line
+                for line in lines
+                if "Package id 0:" in line or "Tctl:" in line or "CPU temp" in line
+            ]
+            return "\n".join(temps)
+        except subprocess.CalledProcessError as e:
+            return f"Error reading CPU temp: {e}"
+
+    def refresh_status(status_queue):
+        while True:
+            status = get_status()
+            cpu_temp = get_cpu_temp()
+            full_status = f"{status}\n\nCPU Temp:\n{cpu_temp}"
+            status_queue.put(full_status)
+            time.sleep(5)
+
+    def bezier_curve(points, n=200):
+        points = np.array(points)
+        x, y = points[:, 0], points[:, 1]
+        t = np.linspace(0, 1, n)
+        polynomial_array = [
+            math.comb(len(x) - 1, i) * (1 - t) ** (len(x) - 1 - i) * t ** i
+            for i in range(len(x))
+        ]
+        curve_x = sum(p * xi for p, xi in zip(polynomial_array, x))
+        curve_y = sum(p * yi for p, yi in zip(polynomial_array, y))
+        return curve_x, curve_y
+
+    def draw_curve(ax, points, label):
+        bx, by = bezier_curve(points)
+        ax.clear()
+        ax.plot(bx, by, label=label)
+        ax.plot(*zip(*points), "o", color="orange")
+        ax.set_xlabel("Temperature (\u00b0C")
+        ax.set_ylabel("Speed (%)")
+        ax.set_ylim(0, 110)
+        ax.set_xlim(20, 90)
+        ax.legend(loc="upper left")
+        ax.grid(True)
+        for i, (x, y) in enumerate(points):
+            ax.annotate(f"{y}%", (x, y + 2), ha="center")
+
+    def enforce_monotonic_curve(points):
+        for i in range(1, len(points)):
+            if points[i][1] < points[i - 1][1]:
+                points[i] = (points[i][0], points[i - 1][1])
+
+    def propagate_change(points, idx, new_y):
+        points[idx] = (points[idx][0], new_y)
+        for i in range(idx + 1, len(points)):
+            if points[i][1] < new_y:
+                points[i] = (points[i][0], new_y)
+        for i in range(idx - 1, -1, -1):
+            if points[i][1] > new_y:
+                points[i] = (points[i][0], new_y)
+
+    def on_press(event):
+        nonlocal dragging_point
+        for ax, points in ((ax1, fan_points), (ax2, pump_points)):
+            if event.inaxes != ax:
+                continue
+            for i, (x, y) in enumerate(points):
+                if abs(event.xdata - x) < 2 and abs(event.ydata - y) < 5:
+                    dragging_point = (ax, points, i)
+                    return
+
+    def on_release(event):
+        nonlocal dragging_point
+        dragging_point = None
+
+    def on_motion(event):
+        if dragging_point is None:
+            return
+        ax, points, idx = dragging_point
+        if event.inaxes != ax or event.ydata is None:
+            return
+        new_y = min(max(int(event.ydata), 0), 100)
+        propagate_change(points, idx, new_y)
+        enforce_monotonic_curve(points)
+        draw_curve(ax, points, ax.get_title())
+        canvas.draw()
+
+    def generate_even_points(
+        start_temp=30, end_temp=80, count=15, base_speed=30, top_speed=100
+    ):
+        step = (end_temp - start_temp) // (count - 1)
+        return [
+            (
+                start_temp + i * step,
+                base_speed + ((top_speed - base_speed) * i) // (count - 1),
+            )
+            for i in range(count)
+        ]
+
+    def save_curve_config():
+        config = {"fan": fan_points, "pump": pump_points}
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config, f)
+
+    def on_apply_plot():
+        fan_vals = get_curve_from_plot(fan_points)
+        pump_vals = get_curve_from_plot(pump_points)
+        apply_curve(fan_vals, pump_vals)
+        save_curve_config()
+        messagebox.showinfo(
+            "Liquidctl", "Fan and pump curves applied and saved."
+        )
+
     dragging_point = None
 
     root = tk.Tk()
@@ -191,7 +237,9 @@ def main():
 
     loaded_fan, loaded_pump = load_curve_config()
     fan_points = loaded_fan if loaded_fan else generate_even_points()
-    pump_points = loaded_pump if loaded_pump else generate_even_points(base_speed=40, top_speed=100)
+    pump_points = (
+        loaded_pump if loaded_pump else generate_even_points(base_speed=40, top_speed=100)
+    )
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
     fig.tight_layout()
@@ -204,9 +252,9 @@ def main():
     canvas.draw()
     canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    canvas.mpl_connect('button_press_event', on_press)
-    canvas.mpl_connect('motion_notify_event', on_motion)
-    canvas.mpl_connect('button_release_event', on_release)
+    canvas.mpl_connect("button_press_event", on_press)
+    canvas.mpl_connect("motion_notify_event", on_motion)
+    canvas.mpl_connect("button_release_event", on_release)
 
     apply_button = ttk.Button(root, text="Apply Curves", command=on_apply_plot)
     apply_button.pack(pady=5)
@@ -215,6 +263,22 @@ def main():
     root.after(0, update_status_text)
 
     root.mainloop()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Liquidctl fan controller GUI")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="apply saved curves and exit without launching the GUI",
+    )
+    args = parser.parse_args()
+
+    if args.apply:
+        apply_saved_curves()
+    else:
+        run_gui()
+
 
 if __name__ == "__main__":
     main()
