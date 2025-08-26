@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import re
 
 # Path where GUI stores curves
 CONFIG_PATH = os.path.expanduser("~/.config/liquidctl_curves.json")
@@ -18,11 +19,46 @@ if LIQUIDCTL_PATH is None:
     )
 
 
-def apply_curve(fan_curve, pump_curve):
+def list_devices():
+    """Enumerate available liquidctl devices and channels."""
+
+    try:
+        output = subprocess.check_output([LIQUIDCTL_PATH, "list"], text=True)
+    except subprocess.CalledProcessError:
+        return []
+
+    devices = []
+    current = None
+    for line in output.splitlines():
+        m_dev = re.match(r"Device\s*#?(\d+):", line)
+        if m_dev:
+            current = int(m_dev.group(1))
+            continue
+        m_chan = re.search(r"channel\s+\d+:\s+(\S+)", line)
+        if m_chan and current is not None:
+            devices.append((current, m_chan.group(1)))
+    return devices
+
+
+def apply_curve(fan_curve, pump_curve, fan_targets=None, pump_targets=None):
     """Send curves to the controller using liquidctl."""
 
-    subprocess.run([LIQUIDCTL_PATH, "set", "fan", "speed"] + fan_curve, check=False)
-    subprocess.run([LIQUIDCTL_PATH, "set", "pump", "speed"] + pump_curve, check=False)
+    fan_targets = fan_targets or [(None, "fan")]
+    pump_targets = pump_targets or [(None, "pump")]
+
+    for dev, chan in fan_targets:
+        cmd = [LIQUIDCTL_PATH]
+        if dev is not None:
+            cmd += ["--device", str(dev)]
+        cmd += ["set", chan, "speed"] + fan_curve
+        subprocess.run(cmd, check=False)
+
+    for dev, chan in pump_targets:
+        cmd = [LIQUIDCTL_PATH]
+        if dev is not None:
+            cmd += ["--device", str(dev)]
+        cmd += ["set", chan, "speed"] + pump_curve
+        subprocess.run(cmd, check=False)
 
 
 def get_curve_from_plot(points):
@@ -37,21 +73,26 @@ def load_curve_config():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH) as f:
             data = json.load(f)
-            return data.get("fan"), data.get("pump")
-    return None, None
+            return (
+                data.get("fan"),
+                data.get("pump"),
+                data.get("fan_targets", []),
+                data.get("pump_targets", []),
+            )
+    return None, None, [], []
 
 
 def apply_saved_curves():
     """Apply previously saved curves without launching the GUI."""
 
-    fan_points, pump_points = load_curve_config()
+    fan_points, pump_points, fan_targets, pump_targets = load_curve_config()
     if not fan_points or not pump_points:
         print(f"No curve configuration found at {CONFIG_PATH}")
         return
 
     fan_vals = get_curve_from_plot(fan_points)
     pump_vals = get_curve_from_plot(pump_points)
-    apply_curve(fan_vals, pump_vals)
+    apply_curve(fan_vals, pump_vals, fan_targets, pump_targets)
 
 
 def run_gui():
@@ -65,6 +106,8 @@ def run_gui():
     import tkinter as tk
 
     import numpy as np
+
+    device_channels = list_devices()
 
     try:
         import matplotlib
@@ -182,8 +225,17 @@ def run_gui():
             for i in range(count)
         ]
 
+    def get_selected_targets(listbox):
+        indices = listbox.curselection()
+        return [[device_channels[i][0], device_channels[i][1]] for i in indices]
+
     def save_curve_config():
-        config = {"fan": fan_points, "pump": pump_points}
+        config = {
+            "fan": fan_points,
+            "pump": pump_points,
+            "fan_targets": get_selected_targets(fan_targets_listbox),
+            "pump_targets": get_selected_targets(pump_targets_listbox),
+        }
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         with open(CONFIG_PATH, "w") as f:
             json.dump(config, f)
@@ -191,7 +243,9 @@ def run_gui():
     def on_apply_plot():
         fan_vals = get_curve_from_plot(fan_points)
         pump_vals = get_curve_from_plot(pump_points)
-        apply_curve(fan_vals, pump_vals)
+        fan_tgts = get_selected_targets(fan_targets_listbox)
+        pump_tgts = get_selected_targets(pump_targets_listbox)
+        apply_curve(fan_vals, pump_vals, fan_tgts, pump_tgts)
         save_curve_config()
         messagebox.showinfo(
             "Liquidctl", "Fan and pump curves applied and saved."
@@ -220,6 +274,8 @@ def run_gui():
 
     status_queue = queue.Queue()
 
+    loaded_fan, loaded_pump, loaded_fan_targets, loaded_pump_targets = load_curve_config()
+
     def update_status_text():
         try:
             while True:
@@ -232,10 +288,34 @@ def run_gui():
             pass
         root.after(100, update_status_text)
 
+    targets_frame = ttk.LabelFrame(root, text="Device Targets")
+    targets_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    ttk.Label(targets_frame, text="Fan Targets").grid(row=0, column=0, sticky=tk.W)
+    ttk.Label(targets_frame, text="Pump Targets").grid(row=0, column=1, sticky=tk.W)
+
+    fan_targets_listbox = tk.Listbox(
+        targets_frame, selectmode=tk.MULTIPLE, exportselection=False, height=6
+    )
+    fan_targets_listbox.grid(row=1, column=0, padx=5, pady=5)
+
+    pump_targets_listbox = tk.Listbox(
+        targets_frame, selectmode=tk.MULTIPLE, exportselection=False, height=6
+    )
+    pump_targets_listbox.grid(row=1, column=1, padx=5, pady=5)
+
+    for i, (dev, chan) in enumerate(device_channels):
+        label = f"{dev}:{chan}"
+        fan_targets_listbox.insert(tk.END, label)
+        pump_targets_listbox.insert(tk.END, label)
+        if [dev, chan] in loaded_fan_targets:
+            fan_targets_listbox.selection_set(i)
+        if [dev, chan] in loaded_pump_targets:
+            pump_targets_listbox.selection_set(i)
+
     curve_frame = ttk.LabelFrame(root, text="Fan and Pump Curves")
     curve_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-    loaded_fan, loaded_pump = load_curve_config()
     fan_points = loaded_fan if loaded_fan else generate_even_points()
     pump_points = (
         loaded_pump if loaded_pump else generate_even_points(base_speed=40, top_speed=100)
