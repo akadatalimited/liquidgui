@@ -1,11 +1,10 @@
 [Unit]
-Description=Apply saved Liquidctl fan curves
+Description=Liquidctl fan curve daemon
 After=network.target
 
 [Service]
-Type=oneshot
-ExecStart=/usr/local/bin/liquidgui --apply
-RemainAfterExit=yes
+Type=simple
+ExecStart=/usr/local/bin/liquidgui --daemon
 
 [Install]
 WantedBy=multi-user.target

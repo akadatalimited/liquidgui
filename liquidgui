@@ -5,94 +5,18 @@
 import argparse
 import json
 import os
-import shutil
 import subprocess
-import re
 
-# Path where GUI stores curves
-CONFIG_PATH = os.path.expanduser("~/.config/liquidctl_curves.json")
-
-LIQUIDCTL_PATH = shutil.which("liquidctl")
-if LIQUIDCTL_PATH is None:
-    raise FileNotFoundError(
-        "liquidctl executable not found. Please install liquidctl and ensure it is in your PATH."
-    )
-
-
-def list_devices():
-    """Enumerate available liquidctl devices and channels."""
-
-    try:
-        output = subprocess.check_output([LIQUIDCTL_PATH, "list"], text=True)
-    except subprocess.CalledProcessError:
-        return []
-
-    devices = []
-    current = None
-    for line in output.splitlines():
-        m_dev = re.match(r"Device\s*#?(\d+):", line)
-        if m_dev:
-            current = int(m_dev.group(1))
-            continue
-        m_chan = re.search(r"channel\s+\d+:\s+(\S+)", line)
-        if m_chan and current is not None:
-            devices.append((current, m_chan.group(1)))
-    return devices
-
-
-def apply_curve(fan_curve, pump_curve, fan_targets=None, pump_targets=None):
-    """Send curves to the controller using liquidctl."""
-
-    fan_targets = fan_targets or [(None, "fan")]
-    pump_targets = pump_targets or [(None, "pump")]
-
-    for dev, chan in fan_targets:
-        cmd = [LIQUIDCTL_PATH]
-        if dev is not None:
-            cmd += ["--device", str(dev)]
-        cmd += ["set", chan, "speed"] + fan_curve
-        subprocess.run(cmd, check=False)
-
-    for dev, chan in pump_targets:
-        cmd = [LIQUIDCTL_PATH]
-        if dev is not None:
-            cmd += ["--device", str(dev)]
-        cmd += ["set", chan, "speed"] + pump_curve
-        subprocess.run(cmd, check=False)
-
-
-def get_curve_from_plot(points):
-    """Convert point pairs into liquidctl CLI arguments."""
-
-    return [str(int(x)) for pair in points for x in pair]
-
-
-def load_curve_config():
-    """Load saved fan and pump curves from disk."""
-
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
-            data = json.load(f)
-            return (
-                data.get("fan"),
-                data.get("pump"),
-                data.get("fan_targets", []),
-                data.get("pump_targets", []),
-            )
-    return None, None, [], []
-
-
-def apply_saved_curves():
-    """Apply previously saved curves without launching the GUI."""
-
-    fan_points, pump_points, fan_targets, pump_targets = load_curve_config()
-    if not fan_points or not pump_points:
-        print(f"No curve configuration found at {CONFIG_PATH}")
-        return
-
-    fan_vals = get_curve_from_plot(fan_points)
-    pump_vals = get_curve_from_plot(pump_points)
-    apply_curve(fan_vals, pump_vals, fan_targets, pump_targets)
+from curves import (
+    CONFIG_PATH,
+    LIQUIDCTL_PATH,
+    apply_curve,
+    apply_saved_curves,
+    get_curve_from_plot,
+    list_devices,
+    load_curve_config,
+    run_daemon,
+)
 
 
 def run_gui():
@@ -352,10 +276,17 @@ def main():
         action="store_true",
         help="apply saved curves and exit without launching the GUI",
     )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="run headless daemon that applies curves periodically",
+    )
     args = parser.parse_args()
 
     if args.apply:
         apply_saved_curves()
+    elif args.daemon:
+        run_daemon()
     else:
         run_gui()
 
