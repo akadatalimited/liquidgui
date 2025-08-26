@@ -1,0 +1,24 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          liquidgui
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Apply saved Liquidctl fan curves
+### END INIT INFO
+
+case "$1" in
+  start)
+    /usr/local/bin/liquidgui --apply
+    ;;
+  stop)
+    ;;
+  restart|force-reload)
+    /usr/local/bin/liquidgui --apply
+    ;;
+  *)
+    echo "Usage: /etc/init.d/liquidgui {start|stop|restart}" >&2
+    exit 3
+    ;;
+ esac
