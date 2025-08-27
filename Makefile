@@ -14,7 +14,8 @@ PYINSTALLER ?= $(PYTHON) -m PyInstaller
 
 .PHONY: all install uninstall test clean binary
 
-all: test binary
+# Default target runs basic checks; the standalone binary is optional
+all: test
 
 install:
 	install -Dm755 $(SCRIPT) $(DESTDIR)$(BINDIR)/$(SCRIPT)
