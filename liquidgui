@@ -183,6 +183,7 @@ def run_gui():
     menubar = tk.Menu(root)
     filemenu = tk.Menu(menubar, tearoff=0)
     filemenu.add_command(label="Save Curves", command=save_curve_config)
+    filemenu.add_command(label="Apply Curves", command=on_apply_plot)
     filemenu.add_command(label="Quit", command=root.quit)
     menubar.add_cascade(label="File", menu=filemenu)
     root.config(menu=menubar)
