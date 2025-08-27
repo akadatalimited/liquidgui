@@ -18,8 +18,10 @@ liquidgui --daemon       # run continuously
 
 ## Standalone binary
 
-A self-contained executable can be produced with [PyInstaller](https://pyinstaller.org/).
-Ensure PyInstaller is installed in the active Python environment (e.g., `python -m pip install PyInstaller`):
+An optional self-contained executable can be produced with [PyInstaller](https://pyinstaller.org/).
+PyInstaller is not required for normal use, but if it is installed in the active
+Python environment (e.g., `python -m pip install PyInstaller`) a binary can be
+built with:
 
 ```bash
 make binary
@@ -33,18 +35,22 @@ The resulting binary is placed in `dist/liquidgui` and can be run directly:
 
 ## Permissions
 
-Access to the Kraken device normally requires root.  A udev rule is provided so
-members of the `plugdev` group can run the tool without `sudo`.
+Access to the Kraken device normally requires root.  A udev rule is provided
+which grants access to the active user via the `uaccess` tag.  The rule also
+sets the device group to `plugdev`.  On distributions that do not create this
+group (for example Arch Linux) you may either create it or modify the rule to
+use another group such as `uucp`.
 
 ### Enabling the udev rule
 
-1. Create the `plugdev` group if it does not already exist:
+1. (Optional) Create the `plugdev` group if it does not already exist, or adjust
+   the rule to use a different group:
 
    ```bash
    sudo groupadd -f plugdev
    ```
 
-2. Add your user to the group:
+2. (Optional) Add your user to the group:
 
    ```bash
    sudo usermod -aG plugdev "$USER"
@@ -68,7 +74,7 @@ members of the `plugdev` group can run the tool without `sudo`.
    ```
 
    Replace `/dev/hidraw0` with the path to your Kraken device; the output should
-   show the `plugdev` group.
+   show the `plugdev` group (or the group you selected).
 
 ## Service integration
 
