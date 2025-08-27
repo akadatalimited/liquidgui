@@ -184,6 +184,11 @@ def run_gui():
     root = tk.Tk()
     root.title("Liquidctl Fan Controller")
 
+    status_queue = queue.Queue()
+    stop_event = threading.Event()
+    status_after_id = None
+    refresh_thread = None
+
     menubar = tk.Menu(root)
     filemenu = tk.Menu(menubar, tearoff=0)
     filemenu.add_command(label="Save Curves", command=save_curve_config)
@@ -191,6 +196,10 @@ def run_gui():
 
     def on_quit():
         stop_event.set()
+        if status_after_id is not None:
+            root.after_cancel(status_after_id)
+        if refresh_thread is not None:
+            refresh_thread.join(timeout=1)
         root.destroy()
 
     filemenu.add_command(label="Quit", command=on_quit)
@@ -228,9 +237,6 @@ def run_gui():
     status_text = tk.Text(status_frame, height=12, width=70, state=tk.DISABLED)
     status_text.pack(fill=tk.BOTH, expand=True)
 
-    status_queue = queue.Queue()
-    stop_event = threading.Event()
-
     loaded_fan, loaded_pump, loaded_fan_targets, loaded_pump_targets = load_curve_config()
     if loaded_fan and loaded_pump:
         apply_curve(
@@ -241,6 +247,7 @@ def run_gui():
         )
 
     def update_status_text():
+        nonlocal status_after_id
         try:
             while True:
                 full_status = status_queue.get_nowait()
@@ -251,7 +258,7 @@ def run_gui():
         except queue.Empty:
             pass
         if not stop_event.is_set():
-            root.after(100, update_status_text)
+            status_after_id = root.after(100, update_status_text)
 
     targets_frame = ttk.LabelFrame(scrollable_frame, text="Device Targets")
     targets_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -304,10 +311,11 @@ def run_gui():
     apply_button = ttk.Button(scrollable_frame, text="Apply Curves", command=on_apply_plot)
     apply_button.pack(pady=5)
 
-    threading.Thread(
+    refresh_thread = threading.Thread(
         target=refresh_status, args=(status_queue, stop_event), daemon=True
-    ).start()
-    root.after(0, update_status_text)
+    )
+    refresh_thread.start()
+    status_after_id = root.after(0, update_status_text)
 
     root.mainloop()
 
