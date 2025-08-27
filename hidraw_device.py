@@ -13,6 +13,9 @@ import glob
 import os
 from typing import List, Tuple
 
+
+NZXT_VENDOR_ID = "1e71"
+
 DeviceChannel = Tuple[str, str]
 
 
@@ -24,14 +27,36 @@ def list_devices() -> List[DeviceChannel]:
     """Return a list of available Kraken device channels.
 
     Each returned tuple contains the device path and a channel name (``fan`` or
-    ``pump``).  If no devices are present an empty list is returned.
+    ``pump``).  Only devices matching the NZXT vendor ID are returned.  If no
+    devices are present an empty list is returned.
     """
 
     devices: List[DeviceChannel] = []
     for path in glob.glob("/dev/hidraw*"):
-        if os.access(path, os.R_OK | os.W_OK):
-            devices.append((path, "fan"))
-            devices.append((path, "pump"))
+        if not os.access(path, os.R_OK | os.W_OK):
+            continue
+
+        uevent_path = f"/sys/class/hidraw/{os.path.basename(path)}/device/uevent"
+        try:
+            with open(uevent_path) as f:
+                props = dict(line.strip().split("=", 1) for line in f if "=" in line)
+        except OSError:  # pragma: no cover - depends on system
+            continue
+
+        hid_id = props.get("HID_ID", "")
+        try:
+            _bus, vendor, product = hid_id.split(":")
+            product = product.split(".")[0]
+        except ValueError:
+            continue
+
+        if vendor.lower() != NZXT_VENDOR_ID:
+            continue
+
+        phys = props.get("HID_PHYS", "")
+        channel = "pump" if phys.endswith("/input1") else "fan"
+        devices.append((path, channel))
+
     return devices
 
 
