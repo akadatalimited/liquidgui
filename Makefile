@@ -5,7 +5,7 @@ INIT_DIR ?= /etc/init.d
 UDEV_DIR ?= /etc/udev/rules.d
 
 SCRIPT = liquidgui
-MODULE = curves.py
+MODULES = curves.py hidraw_device.py
 SYSTEMD_SERVICE = etc/systemd/system/liquidgui.service
 INIT_SCRIPT = etc/init.d/liquidgui
 UDEV_RULE = etc/udev/rules.d/60-liquidctl.rules
@@ -19,14 +19,14 @@ all: test
 
 install:
 	install -Dm755 $(SCRIPT) $(DESTDIR)$(BINDIR)/$(SCRIPT)
-	install -Dm644 $(MODULE) $(DESTDIR)$(BINDIR)/$(MODULE)
+	for m in $(MODULES); do install -Dm644 $$m $(DESTDIR)$(BINDIR)/$$m; done
 	install -Dm644 $(SYSTEMD_SERVICE) $(DESTDIR)$(SYSTEMD_DIR)/liquidgui.service
 	install -Dm755 $(INIT_SCRIPT) $(DESTDIR)$(INIT_DIR)/liquidgui
 	install -Dm644 $(UDEV_RULE) $(DESTDIR)$(UDEV_DIR)/60-liquidctl.rules
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/$(SCRIPT)
-	rm -f $(DESTDIR)$(BINDIR)/$(MODULE)
+	for m in $(MODULES); do rm -f $(DESTDIR)$(BINDIR)/$$m; done
 	rm -f $(DESTDIR)$(SYSTEMD_DIR)/liquidgui.service
 	rm -f $(DESTDIR)$(INIT_DIR)/liquidgui
 	rm -f $(DESTDIR)$(UDEV_DIR)/60-liquidctl.rules
@@ -34,7 +34,7 @@ uninstall:
 PYTHON ?= python3
 
 test:
-	$(PYTHON) -m py_compile $(SCRIPT) $(MODULE)
+	$(PYTHON) -m py_compile $(SCRIPT) $(MODULES)
 
 binary:
 	$(PYINSTALLER) --onefile $(SCRIPT)

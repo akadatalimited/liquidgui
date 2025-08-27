@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""GUI and headless interface for liquidctl fan curves."""
+"""GUI and headless interface for NZXT Kraken fan curves."""
 
 import argparse
 import json
@@ -9,7 +9,6 @@ import subprocess
 
 from curves import (
     CONFIG_PATH,
-    LIQUIDCTL_PATH,
     apply_curve,
     apply_saved_curves,
     get_curve_from_plot,
@@ -17,6 +16,8 @@ from curves import (
     load_curve_config,
     run_daemon,
 )
+
+from hidraw_device import get_status as device_status, KrakenDeviceError
 
 
 def run_gui():
@@ -45,9 +46,8 @@ def run_gui():
 
     def get_status():
         try:
-            output = subprocess.check_output([LIQUIDCTL_PATH, "status"], text=True)
-            return output
-        except subprocess.CalledProcessError as e:
+            return device_status()
+        except KrakenDeviceError as e:
             return f"Error: {e}"
 
     def get_cpu_temp():

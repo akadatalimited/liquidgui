@@ -1,52 +1,34 @@
 #!/usr/bin/env python3
-"""Reusable utilities for applying liquidctl fan curves."""
+"""Reusable utilities for applying fan curves via hidraw."""
 
 import json
 import os
 import re
-import shutil
 import subprocess
 import time
+from typing import List, Tuple
+
+from hidraw_device import (
+    KrakenDevice,
+    KrakenDeviceError,
+    list_devices as hid_list_devices,
+)
 
 CONFIG_PATH = os.path.expanduser("~/.config/liquidctl_curves.json")
 
-LIQUIDCTL_PATH = shutil.which("liquidctl")
-if LIQUIDCTL_PATH is None:
-    raise FileNotFoundError(
-        "liquidctl executable not found. Please install liquidctl and ensure it is in your PATH."
-    )
-
 
 def list_devices():
-    """Enumerate available liquidctl devices and channels."""
-
-    try:
-        output = subprocess.check_output([LIQUIDCTL_PATH, "list"], text=True)
-    except subprocess.CalledProcessError:
-        return []
-
-    devices = []
-    current = None
-    for line in output.splitlines():
-        m_dev = re.match(r"Device\s*#?(\d+):", line)
-        if m_dev:
-            current = int(m_dev.group(1))
-            continue
-        m_chan = re.search(r"channel\s+\d+:\s+(\S+)", line)
-        if m_chan and current is not None:
-            devices.append((current, m_chan.group(1)))
-    return devices
+    """Enumerate available Kraken HID devices and channels."""
+    return hid_list_devices()
 
 
 def get_curve_from_plot(points):
-    """Convert point pairs into liquidctl CLI arguments."""
-
+    """Convert point pairs into a flat list of integers."""
     return [str(int(x)) for pair in points for x in pair]
 
 
 def load_curve_config():
     """Load saved fan and pump curves from disk."""
-
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH) as f:
             data = json.load(f)
@@ -59,30 +41,38 @@ def load_curve_config():
     return None, None, [], []
 
 
+def _default_targets(channel: str) -> List[Tuple[str, str]]:
+    return [
+        (path, chan)
+        for path, chan in hid_list_devices()
+        if chan == channel
+    ]
+
+
 def apply_curve(fan_curve, pump_curve, fan_targets=None, pump_targets=None):
-    """Send curves to the controller using liquidctl."""
+    """Send curves to the controller using the hidraw device."""
 
-    fan_targets = fan_targets or [(None, "fan")]
-    pump_targets = pump_targets or [(None, "pump")]
+    fan_targets = fan_targets or _default_targets("fan")
+    pump_targets = pump_targets or _default_targets("pump")
 
-    for dev, chan in fan_targets:
-        cmd = [LIQUIDCTL_PATH]
-        if dev is not None:
-            cmd += ["--device", str(dev)]
-        cmd += ["set", chan, "speed"] + fan_curve
-        subprocess.run(cmd, check=False)
+    fan_curve = list(map(int, fan_curve))
+    pump_curve = list(map(int, pump_curve))
 
-    for dev, chan in pump_targets:
-        cmd = [LIQUIDCTL_PATH]
-        if dev is not None:
-            cmd += ["--device", str(dev)]
-        cmd += ["set", chan, "speed"] + pump_curve
-        subprocess.run(cmd, check=False)
+    for path, chan in fan_targets:
+        try:
+            KrakenDevice(path).set_curve(chan, fan_curve)
+        except KrakenDeviceError as exc:
+            print(f"Error applying fan curve to {path}:{chan}: {exc}")
+
+    for path, chan in pump_targets:
+        try:
+            KrakenDevice(path).set_curve(chan, pump_curve)
+        except KrakenDeviceError as exc:
+            print(f"Error applying pump curve to {path}:{chan}: {exc}")
 
 
 def apply_saved_curves():
     """Apply previously saved curves without launching the GUI."""
-
     fan_points, pump_points, fan_targets, pump_targets = load_curve_config()
     if not fan_points or not pump_points:
         print(f"No curve configuration found at {CONFIG_PATH}")
@@ -95,7 +85,6 @@ def apply_saved_curves():
 
 def interpolate_curve(points, temp):
     """Interpolate speed from curve points for the given temperature."""
-
     if not points:
         return 0
     if temp <= points[0][0]:
@@ -111,7 +100,6 @@ def interpolate_curve(points, temp):
 
 def read_cpu_temp():
     """Return current CPU temperature in Celsius."""
-
     try:
         output = subprocess.check_output(["sensors"], text=True)
         match = re.search(r"\+([0-9]+(?:\.[0-9]+)?)°C", output)
@@ -124,23 +112,23 @@ def read_cpu_temp():
 
 def apply_speeds(fan_speed, pump_speed, fan_targets, pump_targets):
     """Set fan and pump speeds directly."""
+    fan_targets = fan_targets or _default_targets("fan")
+    pump_targets = pump_targets or _default_targets("pump")
 
-    fan_speed = str(int(fan_speed))
-    pump_speed = str(int(pump_speed))
+    fan_speed = int(fan_speed)
+    pump_speed = int(pump_speed)
 
-    for dev, chan in fan_targets:
-        cmd = [LIQUIDCTL_PATH]
-        if dev is not None:
-            cmd += ["--device", str(dev)]
-        cmd += ["set", chan, "speed", fan_speed]
-        subprocess.run(cmd, check=False)
+    for path, chan in fan_targets:
+        try:
+            KrakenDevice(path).set_speed(chan, fan_speed)
+        except KrakenDeviceError as exc:
+            print(f"Error setting fan speed on {path}:{chan}: {exc}")
 
-    for dev, chan in pump_targets:
-        cmd = [LIQUIDCTL_PATH]
-        if dev is not None:
-            cmd += ["--device", str(dev)]
-        cmd += ["set", chan, "speed", pump_speed]
-        subprocess.run(cmd, check=False)
+    for path, chan in pump_targets:
+        try:
+            KrakenDevice(path).set_speed(chan, pump_speed)
+        except KrakenDeviceError as exc:
+            print(f"Error setting pump speed on {path}:{chan}: {exc}")
 
 
 def run_daemon(interval=5):
