@@ -1,0 +1,2 @@
+# Allow non-root users in the plugdev group to access NZXT Kraken devices
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1e71", MODE="0660", GROUP="plugdev", TAG+="uaccess"

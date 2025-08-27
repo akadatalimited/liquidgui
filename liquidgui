@@ -63,13 +63,14 @@ def run_gui():
         except subprocess.CalledProcessError as e:
             return f"Error reading CPU temp: {e}"
 
-    def refresh_status(status_queue):
-        while True:
+    def refresh_status(status_queue, stop_event):
+        while not stop_event.is_set():
             status = get_status()
             cpu_temp = get_cpu_temp()
             full_status = f"{status}\n\nCPU Temp:\n{cpu_temp}"
             status_queue.put(full_status)
-            time.sleep(5)
+            if stop_event.wait(5):
+                break
 
     def bezier_curve(points, n=200):
         points = np.array(points)
@@ -83,16 +84,19 @@ def run_gui():
         curve_y = sum(p * yi for p, yi in zip(polynomial_array, y))
         return curve_x, curve_y
 
-    def draw_curve(ax, points, label):
+    def draw_curve(ax, points, label=None):
+        title = label or ax.get_title()
         bx, by = bezier_curve(points)
         ax.clear()
-        ax.plot(bx, by, label=label)
+        ax.set_title(title)
+        ax.plot(bx, by, label=title)
         ax.plot(*zip(*points), "o", color="orange")
         ax.set_xlabel("Temperature (\u00b0C")
         ax.set_ylabel("Speed (%)")
         ax.set_ylim(0, 110)
         ax.set_xlim(20, 90)
-        ax.legend(loc="upper left")
+        if title:
+            ax.legend(loc="upper left")
         ax.grid(True)
         for i, (x, y) in enumerate(points):
             ax.annotate(f"{y}%", (x, y + 2), ha="center")
@@ -134,7 +138,7 @@ def run_gui():
         new_y = min(max(int(event.ydata), 0), 100)
         propagate_change(points, idx, new_y)
         enforce_monotonic_curve(points)
-        draw_curve(ax, points, ax.get_title())
+        draw_curve(ax, points)
         plot_canvas.draw()
 
     def generate_even_points(
@@ -184,9 +188,15 @@ def run_gui():
     filemenu = tk.Menu(menubar, tearoff=0)
     filemenu.add_command(label="Save Curves", command=save_curve_config)
     filemenu.add_command(label="Apply Curves", command=on_apply_plot)
-    filemenu.add_command(label="Quit", command=root.quit)
+
+    def on_quit():
+        stop_event.set()
+        root.destroy()
+
+    filemenu.add_command(label="Quit", command=on_quit)
     menubar.add_cascade(label="File", menu=filemenu)
     root.config(menu=menubar)
+    root.protocol("WM_DELETE_WINDOW", on_quit)
 
     container = ttk.Frame(root)
     container.pack(fill=tk.BOTH, expand=True)
@@ -219,8 +229,16 @@ def run_gui():
     status_text.pack(fill=tk.BOTH, expand=True)
 
     status_queue = queue.Queue()
+    stop_event = threading.Event()
 
     loaded_fan, loaded_pump, loaded_fan_targets, loaded_pump_targets = load_curve_config()
+    if loaded_fan and loaded_pump:
+        apply_curve(
+            get_curve_from_plot(loaded_fan),
+            get_curve_from_plot(loaded_pump),
+            loaded_fan_targets,
+            loaded_pump_targets,
+        )
 
     def update_status_text():
         try:
@@ -232,7 +250,8 @@ def run_gui():
                 status_text.config(state=tk.DISABLED)
         except queue.Empty:
             pass
-        root.after(100, update_status_text)
+        if not stop_event.is_set():
+            root.after(100, update_status_text)
 
     targets_frame = ttk.LabelFrame(scrollable_frame, text="Device Targets")
     targets_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -285,7 +304,9 @@ def run_gui():
     apply_button = ttk.Button(scrollable_frame, text="Apply Curves", command=on_apply_plot)
     apply_button.pack(pady=5)
 
-    threading.Thread(target=refresh_status, args=(status_queue,), daemon=True).start()
+    threading.Thread(
+        target=refresh_status, args=(status_queue, stop_event), daemon=True
+    ).start()
     root.after(0, update_status_text)
 
     root.mainloop()
