@@ -18,7 +18,8 @@ liquidgui --daemon       # run continuously
 
 ## Standalone binary
 
-A self-contained executable can be produced with [PyInstaller](https://pyinstaller.org/):
+A self-contained executable can be produced with [PyInstaller](https://pyinstaller.org/).
+Ensure PyInstaller is installed in the active Python environment (e.g., `python -m pip install PyInstaller`):
 
 ```bash
 make binary
