@@ -34,15 +34,41 @@ The resulting binary is placed in `dist/liquidgui` and can be run directly:
 ## Permissions
 
 Access to the Kraken device normally requires root.  A udev rule is provided so
-members of the `plugdev` group can run the tool without `sudo`:
+members of the `plugdev` group can run the tool without `sudo`.
 
-```bash
-sudo usermod -aG plugdev "$USER"
-sudo cp etc/udev/rules.d/60-liquidctl.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger
-```
+### Enabling the udev rule
 
-Log out and back in for group changes to take effect.
+1. Create the `plugdev` group if it does not already exist:
+
+   ```bash
+   sudo groupadd -f plugdev
+   ```
+
+2. Add your user to the group:
+
+   ```bash
+   sudo usermod -aG plugdev "$USER"
+   ```
+
+3. Install the rule and reload udev:
+
+   ```bash
+   sudo cp etc/udev/rules.d/60-liquidctl.rules /etc/udev/rules.d/
+   sudo udevadm control --reload-rules
+   sudo udevadm trigger
+   ```
+
+4. Log out and back in for the new group to take effect.
+
+5. Verify permissions on the device:
+
+   ```bash
+   udevadm info --query=property --name=/dev/hidraw0 | grep -E 'GROUP|MODE'
+   ls -l /dev/hidraw0
+   ```
+
+   Replace `/dev/hidraw0` with the path to your Kraken device; the output should
+   show the `plugdev` group.
 
 ## Service integration
 
