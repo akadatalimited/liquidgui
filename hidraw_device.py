@@ -112,6 +112,7 @@ class KrakenDevice:
 
     REPORT_ID = 0x21
     CMD_SET_SPEED = 0x01
+    CMD_SET_CURVE = 0x02
     CHANNELS = {"fan": 0x00, "pump": 0x01}
 
     def set_speed(self, channel: str, speed: int) -> None:
@@ -143,11 +144,40 @@ class KrakenDevice:
     def set_curve(self, channel: str, curve: List[int]) -> None:
         """Apply a curve defined by ``curve`` to ``channel``.
 
-        ``curve`` is a flat list of temperature/speed pairs.
+        ``curve`` is a flat list of temperature/speed pairs.  The HID report
+        layout is::
+
+            [0] report id (0x21)
+            [1] command (``CMD_SET_CURVE``)
+            [2] channel selector
+            [3] number of points
+            [4:] temperature/speed pairs (one byte each)
+            [63] checksum
+
+        Unused bytes are left as zero.  The checksum is the two's complement of
+        the sum of the preceding bytes.
         """
 
-        for _temp, speed in zip(curve[::2], curve[1::2]):
-            self.set_speed(channel, speed)
+        if channel not in self.CHANNELS:
+            raise ValueError(f"Unsupported channel: {channel}")
+        if len(curve) % 2:
+            raise ValueError("Curve must contain temperature/speed pairs")
+        if any(not 0 <= int(spd) <= 100 for spd in curve[1::2]):
+            raise ValueError("Invalid speed in curve")
+
+        report = bytearray(64)
+        report[0] = self.REPORT_ID
+        report[1] = self.CMD_SET_CURVE
+        report[2] = self.CHANNELS[channel]
+        report[3] = len(curve) // 2
+        for i, value in enumerate(curve):
+            report[4 + i] = int(value) & 0xFF
+        report[-1] = (-sum(report[:-1])) & 0xFF
+
+        try:
+            self._write(bytes(report))
+        except KrakenDeviceError:
+            raise
 
 
 def get_status() -> str:

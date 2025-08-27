@@ -5,6 +5,23 @@ hidraw interface. Devices are enumerated automatically and you can select
 multiple fan or pump channels. Selected targets are saved so the tool can also
 apply previously saved curves in a headless mode.
 
+## Curve report format
+
+The fan and pump curves are sent using a single 64‑byte HID transaction based
+on the format used by `liquidctl` for Kraken devices.  The report layout is:
+
+```
+[0] report id (0x21)
+[1] command (0x02)
+[2] channel selector
+[3] number of points
+[4:] temperature/speed pairs (one byte each)
+[63] checksum
+```
+
+The checksum is the two's complement of the sum of the preceding bytes.  All
+unused bytes are left as zero.
+
 ## Headless mode
 
 The script accepts an `--apply` flag to apply saved curves without launching the
