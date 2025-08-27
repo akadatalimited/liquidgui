@@ -135,7 +135,7 @@ def run_gui():
         propagate_change(points, idx, new_y)
         enforce_monotonic_curve(points)
         draw_curve(ax, points, ax.get_title())
-        canvas.draw()
+        plot_canvas.draw()
 
     def generate_even_points(
         start_temp=30, end_temp=80, count=15, base_speed=30, top_speed=100
@@ -187,7 +187,28 @@ def run_gui():
     menubar.add_cascade(label="File", menu=filemenu)
     root.config(menu=menubar)
 
-    status_frame = ttk.Frame(root)
+    container = ttk.Frame(root)
+    container.pack(fill=tk.BOTH, expand=True)
+
+    scroll_canvas = tk.Canvas(container)
+    scrollbar = ttk.Scrollbar(container, orient="vertical", command=scroll_canvas.yview)
+    scrollable_frame = ttk.Frame(scroll_canvas)
+
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")),
+    )
+
+    scroll_window = scroll_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    scroll_canvas.configure(yscrollcommand=scrollbar.set)
+    scroll_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    scroll_canvas.bind(
+        "<Configure>", lambda e: scroll_canvas.itemconfig(scroll_window, width=e.width)
+    )
+
+    status_frame = ttk.Frame(scrollable_frame)
     status_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     status_label = ttk.Label(status_frame, text="Status:")
@@ -212,7 +233,7 @@ def run_gui():
             pass
         root.after(100, update_status_text)
 
-    targets_frame = ttk.LabelFrame(root, text="Device Targets")
+    targets_frame = ttk.LabelFrame(scrollable_frame, text="Device Targets")
     targets_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     ttk.Label(targets_frame, text="Fan Targets").grid(row=0, column=0, sticky=tk.W)
@@ -237,7 +258,7 @@ def run_gui():
         if [dev, chan] in loaded_pump_targets:
             pump_targets_listbox.selection_set(i)
 
-    curve_frame = ttk.LabelFrame(root, text="Fan and Pump Curves")
+    curve_frame = ttk.LabelFrame(scrollable_frame, text="Fan and Pump Curves")
     curve_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     fan_points = loaded_fan if loaded_fan else generate_even_points()
@@ -252,15 +273,15 @@ def run_gui():
     draw_curve(ax1, fan_points, "Fan")
     draw_curve(ax2, pump_points, "Pump")
 
-    canvas = FigureCanvasTkAgg(fig, master=curve_frame)
-    canvas.draw()
-    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+    plot_canvas = FigureCanvasTkAgg(fig, master=curve_frame)
+    plot_canvas.draw()
+    plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    canvas.mpl_connect("button_press_event", on_press)
-    canvas.mpl_connect("motion_notify_event", on_motion)
-    canvas.mpl_connect("button_release_event", on_release)
+    plot_canvas.mpl_connect("button_press_event", on_press)
+    plot_canvas.mpl_connect("motion_notify_event", on_motion)
+    plot_canvas.mpl_connect("button_release_event", on_release)
 
-    apply_button = ttk.Button(root, text="Apply Curves", command=on_apply_plot)
+    apply_button = ttk.Button(scrollable_frame, text="Apply Curves", command=on_apply_plot)
     apply_button.pack(pady=5)
 
     threading.Thread(target=refresh_status, args=(status_queue,), daemon=True).start()
