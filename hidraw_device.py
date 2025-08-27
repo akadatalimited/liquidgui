@@ -110,16 +110,33 @@ class KrakenDevice:
         except KrakenDeviceError:
             raise
 
+    REPORT_ID = 0x21
+    CMD_SET_SPEED = 0x01
+    CHANNELS = {"fan": 0x00, "pump": 0x01}
+
     def set_speed(self, channel: str, speed: int) -> None:
         """Set the speed of ``channel`` to ``speed`` percent.
 
-        The implementation simply writes a placeholder report to the device; the
-        exact protocol is not required for the tests and can be filled in later.
+        The Kraken 2023 protocol uses a 64‑byte HID report.  The first byte is the
+        report ID, followed by a command identifier, the channel selector and the
+        desired speed.  The last byte of the report is an 8‑bit checksum, defined as
+        the two's complement of the sum of the preceding bytes.
         """
 
-        report = bytes([0x00, 0x01, int(speed) & 0xFF, 0x00])
+        if channel not in self.CHANNELS:
+            raise ValueError(f"Unsupported channel: {channel}")
+        if not 0 <= int(speed) <= 100:
+            raise ValueError(f"Invalid speed: {speed}")
+
+        report = bytearray(64)
+        report[0] = self.REPORT_ID
+        report[1] = self.CMD_SET_SPEED
+        report[2] = self.CHANNELS[channel]
+        report[3] = int(speed) & 0xFF
+        report[-1] = (-sum(report[:-1])) & 0xFF
+
         try:
-            self._write(report)
+            self._write(bytes(report))
         except KrakenDeviceError:
             raise
 
