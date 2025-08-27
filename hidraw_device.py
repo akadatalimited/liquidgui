@@ -54,12 +54,26 @@ class KrakenDevice:
             raise KrakenDeviceError(f"Unable to access {self.path}: {exc}") from exc
 
     def _write(self, data: bytes) -> None:
-        with self._open("wb") as f:
-            f.write(data)
+        """Write ``data`` to the hidraw device.
+
+        Any :class:`OSError` raised while attempting to write (for example, a
+        ``BrokenPipeError`` when no device is present) is converted into a
+        :class:`KrakenDeviceError` so that higher level callers can handle the
+        failure gracefully.
+        """
+
+        try:
+            with self._open("wb") as f:
+                f.write(data)
+        except OSError as exc:  # pragma: no cover - depends on system
+            raise KrakenDeviceError(f"Unable to write to {self.path}: {exc}") from exc
 
     def _read(self, size: int = 64) -> bytes:
-        with self._open("rb") as f:
-            return f.read(size)
+        try:
+            with self._open("rb") as f:
+                return f.read(size)
+        except OSError as exc:  # pragma: no cover - depends on system
+            raise KrakenDeviceError(f"Unable to read from {self.path}: {exc}") from exc
 
     # --- high level operations --------------------------------------------
     def status(self) -> str:
