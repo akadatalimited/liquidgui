@@ -64,6 +64,9 @@ use another group such as `uucp`.
    sudo udevadm trigger
    ```
 
+   After reloading the rules, unplug and replug the device so the new
+   permissions take effect.
+
 4. Log out and back in for the new group to take effect.
 
 5. Verify permissions on the device:
