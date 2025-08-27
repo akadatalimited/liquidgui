@@ -31,6 +31,19 @@ The resulting binary is placed in `dist/liquidgui` and can be run directly:
 ./dist/liquidgui --apply
 ```
 
+## Permissions
+
+Access to the Kraken device normally requires root.  A udev rule is provided so
+members of the `plugdev` group can run the tool without `sudo`:
+
+```bash
+sudo usermod -aG plugdev "$USER"
+sudo cp etc/udev/rules.d/60-liquidctl.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Log out and back in for group changes to take effect.
+
 ## Service integration
 
 Example service files are provided for systemd and SysV init systems. Copy the
