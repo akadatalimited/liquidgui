@@ -8,7 +8,7 @@ MODULE = curves.py
 SYSTEMD_SERVICE = etc/systemd/system/liquidgui.service
 INIT_SCRIPT = etc/init.d/liquidgui
 
-PYINSTALLER ?= pyinstaller
+PYINSTALLER ?= $(PYTHON) -m PyInstaller
 
 .PHONY: all install uninstall test clean binary
 
