@@ -506,10 +506,8 @@ class CurveStore:
 
     def __init__(self):
         self.path = CONFIG_PATH
-        self.status_columns = []
         self.selected_key = None
         self.auto_apply = False
-        self.initial_pane_split_done = False
         self.curves = {}
         self._load()
 
@@ -604,10 +602,13 @@ class LiquidGUI:
         self.info_var = tk.StringVar(value="")
         self.cpu_var = tk.StringVar(value="CPU package: n/a")
         self.status_text = None
+        self.status_columns = []
         self.control_list = None
         self.canvas = None
         self.details_var = tk.StringVar(value="")
-        self.auto_status_var = tk.StringVar(value="Auto apply disabled")
+        self.auto_status_var = tk.StringVar(value="Auto apply disabled\n")
+        self.pane_ratio = 0.34
+        self.pane_resize_after_id = None
 
         self.root.title("LiquidGUI")
         self.root.geometry("900x620")
@@ -633,7 +634,13 @@ class LiquidGUI:
             variable=self.auto_apply_var,
             command=self._toggle_auto_apply,
         ).grid(row=0, column=1, sticky="e")
-        ttk.Label(header, textvariable=self.auto_status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.auto_status_label = ttk.Label(
+            header,
+            textvariable=self.auto_status_var,
+            justify=tk.LEFT,
+            anchor="w",
+        )
+        self.auto_status_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
@@ -669,8 +676,8 @@ class LiquidGUI:
         right.grid_columnconfigure(0, weight=1)
         main.add(right, weight=2)
 
-        self.root.after(150, lambda: self._set_initial_pane_split(main))
-        self.root.after(600, lambda: self._set_initial_pane_split(main))
+        main.bind("<Configure>", lambda _event: self._schedule_pane_ratio(main))
+        self.root.after(150, lambda: self._apply_pane_ratio(main))
 
         ttk.Label(right, textvariable=self.info_var, justify=tk.LEFT).grid(row=0, column=0, sticky="ew")
         self.canvas = tk.Canvas(right, background="#101214", height=260, highlightthickness=0)
@@ -706,28 +713,29 @@ class LiquidGUI:
             )
             self.status_columns.append(text)
 
-    def _set_pane_ratio(self, paned, ratio):
-        paned.update_idletasks()
-        width = paned.winfo_width()
+    def _schedule_pane_ratio(self, paned):
+        """Debounce pane resize handling so the left/right split remains stable."""
 
-        if width > 100:
-            paned.sashpos(0, int(width * ratio))
+        if self.pane_resize_after_id is not None:
+            self.root.after_cancel(self.pane_resize_after_id)
 
-    def _set_initial_pane_split(self, paned):
-        """Set the initial left/right split after the window has settled."""
+        self.pane_resize_after_id = self.root.after(
+            80,
+            lambda: self._apply_pane_ratio(paned),
+        )
 
-        if self.initial_pane_split_done:
-            return
+    def _apply_pane_ratio(self, paned):
+        """Keep the PanedWindow split at the configured left/right ratio."""
 
+        self.pane_resize_after_id = None
         paned.update_idletasks()
         width = paned.winfo_width()
 
         if width < 300:
-            self.root.after(100, lambda: self._set_initial_pane_split(paned))
             return
 
-        paned.sashpos(0, int(width * 0.34))
-        self.initial_pane_split_done = True
+        paned.sashpos(0, int(width * self.pane_ratio))
+
 
     def _refresh_loop(self):
         """Refresh sensor state and optionally auto-apply curves on a timer."""
@@ -855,7 +863,7 @@ class LiquidGUI:
 
         self.curves.auto_apply = self.auto_apply_var.get()
         self.curves.save()
-        self.auto_status_var.set("Auto apply enabled" if self.auto_apply_var.get() else "Auto apply disabled")
+        self._set_auto_status("Auto apply enabled" if self.auto_apply_var.get() else "Auto apply disabled")
 
     def _toggle_selected_curve(self):
         """Enable or disable the currently selected control curve."""
@@ -916,7 +924,7 @@ class LiquidGUI:
         self.details_var.set(
             "Drag the orange points directly on the Bezier curve. Raising a point pushes later points up on the Y axis, and lowering a point on the right pulls earlier points down to match. Curves are saved automatically."
         )
-        self.auto_status_var.set("Auto apply enabled" if self.auto_apply_var.get() else "Auto apply disabled")
+        self._set_auto_status("Auto apply enabled" if self.auto_apply_var.get() else "Auto apply disabled")
 
     def _curve_geometry(self):
         """Return the current canvas dimensions and drawing margins."""
@@ -1106,7 +1114,20 @@ class LiquidGUI:
             messagebox.showinfo("LiquidGUI", f"Curve for {control.label} is disabled.")
             return
 
-        self.auto_status_var.set(f"Applied {duty}% to {control.label}")
+        self._set_auto_status(f"Applied {duty}% to {control.label}")
+
+    def _set_auto_status(self, text):
+        """Set the auto/apply status text while reserving two visible lines."""
+
+        lines = str(text).splitlines()
+
+        if len(lines) == 0:
+            lines = ["", ""]
+
+        if len(lines) == 1:
+            lines.append("")
+
+        self.auto_status_var.set("\n".join(lines[:2]))
 
     def _format_applied_curves(self, applied):
         """Return applied curve status split across two readable lines."""
@@ -1140,9 +1161,9 @@ class LiquidGUI:
                 applied.append(f"{control.label}={duty}%")
 
         if applied:
-            self.auto_status_var.set(self._format_applied_curves(applied))
+            self._set_auto_status(self._format_applied_curves(applied))
         else:
-            self.auto_status_var.set("No enabled curves to apply")
+            self._set_auto_status("No enabled curves to apply")
 
     def _auto_apply_if_needed(self):
         """Throttle automatic curve application to the refresh cadence."""
