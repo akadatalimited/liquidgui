@@ -1,0 +1,9 @@
+hwmon1 exists
+hwmon2 exists
+hwmon3 exists
+hwmon4 exists
+hwmon5 exists
+hwmon6 exists
+hwmon7 exists
+hwmon8 exists
+hwmon9 exists

@@ -1,0 +1,6 @@
+# Allow liquidctl to control NZXT K4 Kraken pump duty
+SUBSYSTEM=="hwmon", KERNEL=="*8*", ACTION+="add|change" {
+    SYMLINK="NZXT_Kraken_pump"; GROUP="smalley"; MODE="0666"
+}
+
+RULES_EOF && cat /srv/test/etc/60-liquidctl.rules | tail -3 || true

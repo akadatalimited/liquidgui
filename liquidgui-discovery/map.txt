@@ -1,0 +1,4 @@
+  File "<string>", line 1
+    import glob, os; base='/sys/class/hwmon'; print('='*70); [print(f'\n--- {hw} ---'); hwm=os.path.basename(hw).lower() if os.path.isdir(hw) else '' for hw in sorted(glob.glob(base+'/*'))]
+                                                                                      ^
+SyntaxError: invalid syntax

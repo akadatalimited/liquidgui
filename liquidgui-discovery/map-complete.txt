@@ -1,0 +1,8 @@
+=== HWMON 8 (NZXT Kraken Chip) SENSOR MAP ===
+
+chip: hwmon-9002
+pumpspeed_input: temp*_input (coolant temperature from loop fluid)  
+fan1_label: Pump speed|Fan speed (primary control target in GUI duty slider)
+
+
+ENDMAP && cat /srv/test/liquidgui-discovery/*.txt* 2>/dev/null | grep -v "^$" || true

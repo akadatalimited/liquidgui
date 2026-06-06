@@ -1,0 +1,4 @@
+  File "<stdin>", line 1
+    import glob; print("#!/usr/bin/env python3") ; print("base = '/sys/class/hwmon'\"); [print(f"\n### {hw} ###\n", end=") if hw else None for hw in sorted(glob.glob(base + "/*"))]
+                                                                                                  ^
+SyntaxError: unexpected character after line continuation character

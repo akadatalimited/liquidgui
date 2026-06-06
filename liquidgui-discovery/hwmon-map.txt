@@ -1,0 +1,25 @@
+======================================================================
+HWMON DISCOVERY REPORT
+======================================================================
+
+--- Chip: /sys/class/hwmon/hwmon0 (hwmon0) ---
+
+--- Chip: /sys/class/hwmon/hwmon1 (hwmon1) ---
+
+--- Chip: /sys/class/hwmon/hwmon10 (hwmon10) ---
+
+--- Chip: /sys/class/hwmon/hwmon2 (hwmon2) ---
+
+--- Chip: /sys/class/hwmon/hwmon3 (hwmon3) ---
+
+--- Chip: /sys/class/hwmon/hwmon4 (hwmon4) ---
+
+--- Chip: /sys/class/hwmon/hwmon5 (hwmon5) ---
+
+--- Chip: /sys/class/hwmon/hwmon6 (hwmon6) ---
+
+--- Chip: /sys/class/hwmon/hwmon7 (hwmon7) ---
+
+--- Chip: /sys/class/hwmon/hwmon8 (hwmon8) ---
+
+--- Chip: /sys/class/hwmon/hwmon9 (hwmon9) ---
