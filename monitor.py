@@ -506,6 +506,7 @@ class CurveStore:
 
     def __init__(self):
         self.path = CONFIG_PATH
+        self.status_columns = []
         self.selected_key = None
         self.auto_apply = False
         self.curves = {}
@@ -636,13 +637,13 @@ class LiquidGUI:
         main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
 
-        left = ttk.Frame(main, padding=8)
+        left = ttk.Frame(main, padding=8, width=320)
         left.grid_columnconfigure(0, weight=1)
         left.grid_rowconfigure(1, weight=1)
         main.add(left, weight=1)
 
         ttk.Label(left, text="Detected controls").grid(row=0, column=0, sticky="w")
-        self.control_list = tk.Listbox(left, exportselection=False, height=10)
+        self.control_list = tk.Listbox(left, exportselection=False, height=10, width=34)
         self.control_list.grid(row=1, column=0, sticky="nsew", pady=(6, 8))
         self.control_list.bind("<<ListboxSelect>>", self._on_control_selected)
 
@@ -665,7 +666,9 @@ class LiquidGUI:
         right = ttk.Frame(main, padding=8)
         right.grid_rowconfigure(1, weight=1)
         right.grid_columnconfigure(0, weight=1)
-        main.add(right, weight=3)
+        main.add(right, weight=2)
+
+        self.root.after(150, lambda: self._set_initial_pane_split(main))
 
         ttk.Label(right, textvariable=self.info_var, justify=tk.LEFT).grid(row=0, column=0, sticky="ew")
         self.canvas = tk.Canvas(right, background="#101214", height=260, highlightthickness=0)
@@ -681,9 +684,42 @@ class LiquidGUI:
         status_frame = ttk.LabelFrame(self.root, text="Sensor summary", padding=8)
         status_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
         status_frame.grid_rowconfigure(0, weight=1)
-        status_frame.grid_columnconfigure(0, weight=1)
-        self.status_text = tk.Text(status_frame, height=10, state=tk.DISABLED)
-        self.status_text.grid(row=0, column=0, sticky="nsew")
+
+        self.status_columns = []
+        for column in range(3):
+            status_frame.grid_columnconfigure(column, weight=1, uniform="status")
+            text = tk.Text(
+                status_frame,
+                height=10,
+                state=tk.DISABLED,
+                wrap=tk.NONE,
+                width=1,
+                font=("TkFixedFont", 9),
+            )
+            text.grid(
+                row=0,
+                column=column,
+                sticky="nsew",
+                padx=(0 if column == 0 else 6, 0),
+            )
+            self.status_columns.append(text)
+
+    def _set_pane_ratio(self, paned, ratio):
+        paned.update_idletasks()
+        width = paned.winfo_width()
+
+        if width > 100:
+            paned.sashpos(0, int(width * ratio))
+
+    def _set_initial_pane_split(self, paned):
+        paned.update_idletasks()
+        width = paned.winfo_width()
+
+        if width < 300:
+            self.root.after(100, lambda: self._set_initial_pane_split(paned))
+            return
+
+        paned.sashpos(0, int(width * 0.34))
 
     def _refresh_loop(self):
         """Refresh sensor state and optionally auto-apply curves on a timer."""
@@ -749,28 +785,47 @@ class LiquidGUI:
         self.selected_enabled.set(self.curves.get_curve(self.controls[self.selected_key]).enabled)
 
     def _render_status_text(self, snapshot):
-        """Render the plain-text sensor summary panel."""
+        """Render the sensor summary panel across three columns."""
 
-        lines = []
-        lines.append("Temperatures")
+        temp_lines = []
         for sensor in snapshot["temps"]:
             value = "n/a" if sensor.value_c is None else f"{sensor.value_c:.1f} C"
-            lines.append(f"  {sensor.chip}: {sensor.label} = {value}")
+            temp_lines.append(f"{sensor.chip}: {sensor.label} = {value}")
 
-        lines.append("")
-        lines.append("Fans")
+        fan_lines = []
         for sensor in snapshot["fans"]:
             value = "n/a" if sensor.rpm is None else f"{sensor.rpm} RPM"
-            lines.append(f"  {sensor.chip}: {sensor.label} = {value}")
+            fan_lines.append(f"{sensor.chip}: {sensor.label} = {value}")
 
-        if not snapshot["controls"]:
-            lines.append("")
-            lines.append("No motherboard pwm controls are currently exposed by hwmon on this machine.")
-        elif not any(control.kind == "hwmon" for control in snapshot["controls"]):
-            lines.append("")
-            lines.append("No motherboard pwm controls are currently exposed by hwmon on this machine.")
+        control_lines = []
+        for control in snapshot["controls"]:
+            value = "n/a" if control.duty is None else f"{control.duty}%"
+            control_lines.append(f"{control.chip}: {control.label} = {value}")
 
-        self._set_status_text("\n".join(lines))
+        midpoint = (len(temp_lines) + 1) // 2
+
+        first_column = ["Temperatures"] + [f"  {line}" for line in temp_lines[:midpoint]]
+
+        second_column = []
+        if temp_lines[midpoint:]:
+            second_column = ["Temperatures"] + [f"  {line}" for line in temp_lines[midpoint:]]
+
+        third_column = ["Fans"] + [f"  {line}" for line in fan_lines]
+
+        if control_lines:
+            third_column.extend(["", "Controls"])
+            third_column.extend(f"  {line}" for line in control_lines)
+
+        if not any(control.kind == "hwmon" for control in snapshot["controls"]):
+            third_column.extend(["", "No motherboard PWM controls are currently exposed by hwmon on this machine."])
+
+        self._set_status_columns(
+            [
+                "\n".join(first_column),
+                "\n".join(second_column),
+                "\n".join(third_column),
+            ]
+        )
 
     def _selected_control(self):
         """Return the currently selected control channel, if any."""
@@ -1045,6 +1100,21 @@ class LiquidGUI:
 
         self.auto_status_var.set(f"Applied {duty}% to {control.label}")
 
+    def _format_applied_curves(self, applied):
+        """Return applied curve status split across two readable lines."""
+
+        if not applied:
+            return "No enabled curves to apply"
+
+        midpoint = (len(applied) + 1) // 2
+        first_line = ", ".join(applied[:midpoint])
+        second_line = ", ".join(applied[midpoint:])
+
+        if second_line:
+            return f"Applied curves: {first_line}\n{second_line}"
+
+        return f"Applied curves: {first_line}"
+
     def _apply_all_curves(self):
         """Apply every enabled control curve in the current snapshot."""
 
@@ -1062,7 +1132,7 @@ class LiquidGUI:
                 applied.append(f"{control.label}={duty}%")
 
         if applied:
-            self.auto_status_var.set("Applied curves: " + ", ".join(applied))
+            self.auto_status_var.set(self._format_applied_curves(applied))
         else:
             self.auto_status_var.set("No enabled curves to apply")
 
@@ -1081,13 +1151,22 @@ class LiquidGUI:
             raise
         self.last_auto_apply_at = now
 
-    def _set_status_text(self, text):
-        """Replace the contents of the sensor summary text widget."""
+    def _set_status_columns(self, columns):
+        """Replace the contents of the three sensor summary columns."""
 
-        self.status_text.config(state=tk.NORMAL)
-        self.status_text.delete("1.0", tk.END)
-        self.status_text.insert(tk.END, text)
-        self.status_text.config(state=tk.DISABLED)
+        while len(columns) < 3:
+            columns.append("")
+
+        for widget, text in zip(self.status_columns, columns[:3]):
+            widget.config(state=tk.NORMAL)
+            widget.delete("1.0", tk.END)
+            widget.insert(tk.END, text)
+            widget.config(state=tk.DISABLED)
+
+    def _set_status_text(self, text):
+        """Replace the sensor summary with a single left-column message."""
+
+        self._set_status_columns([text, "", ""])
 
     def close(self):
         """Persist current UI state and close the application window."""
