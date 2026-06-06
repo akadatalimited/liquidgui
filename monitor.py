@@ -509,6 +509,7 @@ class CurveStore:
         self.status_columns = []
         self.selected_key = None
         self.auto_apply = False
+        self.initial_pane_split_done = False
         self.curves = {}
         self._load()
 
@@ -669,6 +670,7 @@ class LiquidGUI:
         main.add(right, weight=2)
 
         self.root.after(150, lambda: self._set_initial_pane_split(main))
+        self.root.after(600, lambda: self._set_initial_pane_split(main))
 
         ttk.Label(right, textvariable=self.info_var, justify=tk.LEFT).grid(row=0, column=0, sticky="ew")
         self.canvas = tk.Canvas(right, background="#101214", height=260, highlightthickness=0)
@@ -712,6 +714,11 @@ class LiquidGUI:
             paned.sashpos(0, int(width * ratio))
 
     def _set_initial_pane_split(self, paned):
+        """Set the initial left/right split after the window has settled."""
+
+        if self.initial_pane_split_done:
+            return
+
         paned.update_idletasks()
         width = paned.winfo_width()
 
@@ -720,6 +727,7 @@ class LiquidGUI:
             return
 
         paned.sashpos(0, int(width * 0.34))
+        self.initial_pane_split_done = True
 
     def _refresh_loop(self):
         """Refresh sensor state and optionally auto-apply curves on a timer."""
