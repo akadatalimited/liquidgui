@@ -140,3 +140,11 @@ python3 -m py_compile liquidgui monitor.py
 
 The launcher script is `liquidgui`, and the application logic lives in
 `monitor.py`.
+
+## Links
+
+Visit:
+
+- `https://articles.akadata.ltd`
+- `https://www.akadata.ltd/`
+- `https://www.breatechtechnology.co.uk/`

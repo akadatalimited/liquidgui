@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+#
+# (C) 2025 AKADATA LIMITED - Andrew Smalley
+# Released under the MIT License.
 
 """LiquidGUI runtime, sensor discovery, curve storage, and Tk interface."""
 
