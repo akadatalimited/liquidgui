@@ -37,26 +37,84 @@ Print detected sensors and controls without opening the GUI:
 ./liquidgui --dump-detect
 ```
 
+## Build and install
+
+Compile a single-file binary with PyInstaller:
+
+```bash
+make binary
+```
+
+That produces `dist/liquidgui`.
+
+Install the source launcher and `monitor.py` into `/usr/local/bin`:
+
+```bash
+sudo make install
+```
+
+Install the compiled single-file binary into `/usr/local/bin`:
+
+```bash
+sudo make install-binary
+```
+
 ## Permissions
 
 Access to Kraken control usually requires either a working udev rule or root.
 A sample `liquidctl` udev rule is provided in `etc/udev/rules.d/60-liquidctl.rules`.
 
-Install and reload it with:
+Install the udev rule with:
 
 ```bash
-sudo cp etc/udev/rules.d/60-liquidctl.rules /etc/udev/rules.d/
+sudo make udev-install
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-On Arch Linux, adjust the group in the rule if you do not use `plugdev`.
+Add your user to the access group used by the rule:
+
+```bash
+make user-install
+```
+
+To add a different user:
+
+```bash
+make user-install INSTALL_USER=someuser
+```
+
+To install both the rule and the user/group access in one step:
+
+```bash
+make permissions-install
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+Equivalent manual reload commands:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+On Arch Linux, adjust the group in the rule if you do not use `plugdev`, or override it during setup:
+
+```bash
+make user-install ACCESS_GROUP=uucp
+```
 
 ## Motherboard fan support
 
 Motherboard fan control depends on the kernel exposing writable PWM nodes under
 `/sys/class/hwmon`. If AIO controls appear but motherboard headers do not, you
 may need a board-specific driver.
+
+This build has been tested on:
+
+- Manufacturer: `Micro-Star International Co., Ltd.`
+- Product Name: `MPG Z790 CARBON WIFI (MS-7D89)`
 
 For Nuvoton NCT6687/NCT6687D based boards, see:
 
@@ -67,6 +125,10 @@ For Nuvoton NCT6687/NCT6687D based boards, see:
 Once the driver is loaded and writable `pwmN` files appear in `hwmon`,
 `liquidgui` will pick them up automatically as `Motherboard fan 1`, `fan 2`,
 and so on.
+
+Testing on other motherboards is welcome. If your board exposes working
+`hwmon` PWM controls, please report the model and driver details so support can
+be documented more broadly.
 
 ## Development
 

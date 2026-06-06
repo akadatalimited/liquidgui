@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+"""LiquidGUI runtime, sensor discovery, curve storage, and Tk interface."""
+
 import argparse
 import json
 import math
@@ -28,6 +30,8 @@ SUDO_PREFIX = ["sudo"]
 
 @dataclass
 class TempSensor:
+    """A readable temperature sensor exposed through hwmon."""
+
     chip: str
     label: str
     path: str
@@ -36,6 +40,8 @@ class TempSensor:
 
 @dataclass
 class FanSensor:
+    """A readable fan RPM sensor exposed through hwmon."""
+
     chip: str
     label: str
     path: str
@@ -44,6 +50,8 @@ class FanSensor:
 
 @dataclass
 class ControlChannel:
+    """A writable control target backed by liquidctl or hwmon PWM."""
+
     chip: str
     label: str
     kind: str
@@ -54,20 +62,28 @@ class ControlChannel:
 
     @property
     def key(self):
+        """Return the persistent storage key for this control channel."""
+
         return f"{self.kind}:{self.identifier}"
 
 
 @dataclass
 class CurveConfig:
+    """Saved Bezier control points and enabled state for one control."""
+
     points: list[tuple[int, int]]
     enabled: bool = True
 
 
 class LiquidGUIError(RuntimeError):
+    """Application-level error raised for discovery or control failures."""
+
     pass
 
 
 def is_generic_hwmon_label(label):
+    """Return True when a hwmon label is only a generic fan or pwm name."""
+
     if not label:
         return True
 
@@ -76,6 +92,8 @@ def is_generic_hwmon_label(label):
 
 
 def is_writable_hwmon_pwm(path):
+    """Return True when a hwmon PWM node is writable by the driver."""
+
     try:
         mode = Path(path).stat().st_mode
     except OSError:
@@ -85,6 +103,8 @@ def is_writable_hwmon_pwm(path):
 
 
 def read_text(path):
+    """Read a sysfs-style text file and return None on read failure."""
+
     try:
         return Path(path).read_text(encoding="utf-8").strip()
     except OSError:
@@ -92,6 +112,8 @@ def read_text(path):
 
 
 def read_int(path):
+    """Read an integer file and return None on missing or invalid content."""
+
     text = read_text(path)
     if text is None:
         return None
@@ -103,6 +125,8 @@ def read_int(path):
 
 
 def celsius_from_millidegrees(value):
+    """Convert a millidegree reading to a rounded Celsius float."""
+
     if value is None:
         return None
 
@@ -110,6 +134,8 @@ def celsius_from_millidegrees(value):
 
 
 def default_curve_for(control):
+    """Return the default curve for a newly discovered control."""
+
     base = [(30, 30), (40, 38), (50, 50), (60, 72), (72, 100)]
     if "pump" in control.label.lower():
         return [(30, 70), (40, 78), (50, 86), (60, 94), (72, 100)]
@@ -117,6 +143,8 @@ def default_curve_for(control):
 
 
 def normalize_curve_points(points):
+    """Clamp and normalize curve points into valid temperature and duty ranges."""
+
     normalized = []
     for point in points:
         temp = int(point[0])
@@ -133,6 +161,8 @@ def normalize_curve_points(points):
 
 
 def cubic_bezier_point(p0, p1, p2, p3, t):
+    """Sample a cubic Bezier segment at the normalized position ``t``."""
+
     inv = 1.0 - t
     inv2 = inv * inv
     t2 = t * t
@@ -152,6 +182,8 @@ def cubic_bezier_point(p0, p1, p2, p3, t):
 
 
 def bezier_curve_samples(points, samples_per_segment=32):
+    """Sample a smooth interpolating Bezier path through the control points."""
+
     if not points:
         return []
 
@@ -184,10 +216,14 @@ def bezier_curve_samples(points, samples_per_segment=32):
 
 
 def curve_samples(points):
+    """Return sampled points for the rendered and evaluated control curve."""
+
     return bezier_curve_samples(points)
 
 
 def duty_from_curve(points, temp_c):
+    """Evaluate the curve at the provided temperature and return duty percent."""
+
     samples = curve_samples(points)
     if not samples:
         return 0
@@ -215,7 +251,11 @@ def duty_from_curve(points, temp_c):
 
 
 class SensorBackend:
+    """Discover sensors and apply control changes through liquidctl or hwmon."""
+
     def discover(self):
+        """Return the current snapshot of temperatures, fans, and controls."""
+
         liquidctl = self._liquidctl_status()
         snapshot = {
             "temps": self._discover_temps(),
@@ -227,6 +267,8 @@ class SensorBackend:
         return snapshot
 
     def apply_control(self, control, duty_percent):
+        """Apply a duty percentage to a single control channel."""
+
         if control.kind == "liquidctl":
             self._apply_liquidctl(control.identifier, duty_percent)
             return
@@ -238,6 +280,8 @@ class SensorBackend:
         raise LiquidGUIError(f"Unsupported control kind: {control.kind}")
 
     def _discover_temps(self):
+        """Enumerate readable temperature sensors from hwmon."""
+
         temps = []
         for hwmon in sorted(HWMON_ROOT.glob("hwmon*")):
             chip = read_text(hwmon / "name") or hwmon.name
@@ -249,6 +293,8 @@ class SensorBackend:
         return temps
 
     def _discover_fans(self):
+        """Enumerate readable fan RPM sensors from hwmon."""
+
         fans = []
         for hwmon in sorted(HWMON_ROOT.glob("hwmon*")):
             chip = read_text(hwmon / "name") or hwmon.name
@@ -259,6 +305,8 @@ class SensorBackend:
         return fans
 
     def _discover_controls(self, liquidctl):
+        """Enumerate writable AIO and motherboard fan controls."""
+
         controls = []
 
         if liquidctl:
@@ -304,6 +352,8 @@ class SensorBackend:
         return controls
 
     def _pick_cpu_temp(self, temps):
+        """Choose the best CPU temperature source for curve evaluation."""
+
         package_sensor = next(
             (
                 sensor
@@ -322,6 +372,8 @@ class SensorBackend:
         return next((sensor.value_c for sensor in temps if sensor.value_c is not None), None)
 
     def _liquidctl_status(self):
+        """Read liquidctl status output and normalize it into channel data."""
+
         try:
             result = subprocess.run(
                 ["liquidctl", "status"],
@@ -378,6 +430,8 @@ class SensorBackend:
         return {"device": device, "channels": channels, "telemetry": telemetry}
 
     def _apply_liquidctl(self, channel, duty_percent):
+        """Apply a duty percentage to a liquidctl-backed control channel."""
+
         result = subprocess.run(
             SUDO_PREFIX + ["liquidctl", "set", channel, "speed", str(int(duty_percent))],
             capture_output=True,
@@ -395,6 +449,8 @@ class SensorBackend:
         raise LiquidGUIError(detail)
 
     def _apply_hwmon(self, pwm_path, duty_percent):
+        """Apply a duty percentage to a hwmon PWM control node."""
+
         pwm = Path(pwm_path)
         enable = pwm.with_name(f"{pwm.name}_enable")
         raw_value = str(max(0, min(255, round((duty_percent / 100.0) * 255))))
@@ -407,6 +463,8 @@ class SensorBackend:
             raise LiquidGUIError(str(exc)) from exc
 
     def _sudo_write_text(self, path, value):
+        """Write text to a privileged file path using ``sudo tee``."""
+
         result = subprocess.run(
             SUDO_PREFIX + ["tee", str(path)],
             input=value,
@@ -422,6 +480,8 @@ class SensorBackend:
 
 
 class CurveStore:
+    """Load, migrate, and persist per-control curve configuration."""
+
     def __init__(self):
         self.path = CONFIG_PATH
         self.selected_key = None
@@ -430,6 +490,8 @@ class CurveStore:
         self._load()
 
     def _load(self):
+        """Load the current curve store or migrate the legacy config format."""
+
         data = None
         if self.path.exists():
             try:
@@ -454,6 +516,8 @@ class CurveStore:
                 )
 
     def _load_legacy(self):
+        """Translate the old liquidctl curve file into the new storage shape."""
+
         try:
             data = json.loads(LEGACY_CONFIG_PATH.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -473,6 +537,8 @@ class CurveStore:
         }
 
     def save(self):
+        """Persist the current curve configuration to disk."""
+
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "selected_key": self.selected_key,
@@ -488,6 +554,8 @@ class CurveStore:
         self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def get_curve(self, control):
+        """Return the saved curve for a control, creating a default if needed."""
+
         config = self.curves.get(control.key)
         if config is None:
             config = CurveConfig(points=default_curve_for(control))
@@ -496,6 +564,8 @@ class CurveStore:
 
 
 class LiquidGUI:
+    """Tk application for editing and applying Bezier fan curves."""
+
     def __init__(self, root, backend):
         self.root = root
         self.backend = backend
@@ -523,6 +593,8 @@ class LiquidGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _build_ui(self):
+        """Create the application layout and bind the interactive widgets."""
+
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
@@ -592,6 +664,8 @@ class LiquidGUI:
         self.status_text.grid(row=0, column=0, sticky="nsew")
 
     def _refresh_loop(self):
+        """Refresh sensor state and optionally auto-apply curves on a timer."""
+
         try:
             snapshot = self.backend.discover()
             self.snapshot = snapshot
@@ -604,6 +678,8 @@ class LiquidGUI:
         self.root.after(REFRESH_SECONDS * 1000, self._refresh_loop)
 
     def _render(self, snapshot):
+        """Render a fresh sensor/control snapshot into the UI."""
+
         cpu = snapshot["cpu_temp_c"]
         if cpu is None:
             self.cpu_var.set("CPU package: n/a")
@@ -618,6 +694,8 @@ class LiquidGUI:
         self._draw_curve()
 
     def _sync_control_list(self):
+        """Rebuild the control list while preserving the current selection."""
+
         previous = self.selected_key or self.curves.selected_key
         items = list(self.controls.values())
         self.control_list.delete(0, tk.END)
@@ -649,6 +727,8 @@ class LiquidGUI:
         self.selected_enabled.set(self.curves.get_curve(self.controls[self.selected_key]).enabled)
 
     def _render_status_text(self, snapshot):
+        """Render the plain-text sensor summary panel."""
+
         lines = []
         lines.append("Temperatures")
         for sensor in snapshot["temps"]:
@@ -671,22 +751,30 @@ class LiquidGUI:
         self._set_status_text("\n".join(lines))
 
     def _selected_control(self):
+        """Return the currently selected control channel, if any."""
+
         if self.selected_key is None:
             return None
         return self.controls.get(self.selected_key)
 
     def _selected_curve(self):
+        """Return the curve configuration for the selected control."""
+
         control = self._selected_control()
         if control is None:
             return None
         return self.curves.get_curve(control)
 
     def _toggle_auto_apply(self):
+        """Persist and display the current auto-apply setting."""
+
         self.curves.auto_apply = self.auto_apply_var.get()
         self.curves.save()
         self.auto_status_var.set("Auto apply enabled" if self.auto_apply_var.get() else "Auto apply disabled")
 
     def _toggle_selected_curve(self):
+        """Enable or disable the currently selected control curve."""
+
         curve = self._selected_curve()
         if curve is None:
             return
@@ -696,6 +784,8 @@ class LiquidGUI:
         self._draw_curve()
 
     def _on_control_selected(self, _event):
+        """Update editor state when the selected control changes."""
+
         selection = self.control_list.curselection()
         if not selection:
             return
@@ -708,6 +798,8 @@ class LiquidGUI:
         self._draw_curve()
 
     def _reset_selected_curve(self):
+        """Reset the selected curve back to its default control profile."""
+
         control = self._selected_control()
         if control is None:
             return
@@ -721,6 +813,8 @@ class LiquidGUI:
         self._draw_curve()
 
     def _update_editor_labels(self):
+        """Refresh the curve editor header and instructional text."""
+
         control = self._selected_control()
         curve = self._selected_curve()
         if control is None or curve is None:
@@ -740,12 +834,16 @@ class LiquidGUI:
         self.auto_status_var.set("Auto apply enabled" if self.auto_apply_var.get() else "Auto apply disabled")
 
     def _curve_geometry(self):
+        """Return the current canvas dimensions and drawing margins."""
+
         width = max(self.canvas.winfo_width(), 320)
         height = max(self.canvas.winfo_height(), 220)
         margin = {"left": 46, "right": 18, "top": 18, "bottom": 32}
         return width, height, margin
 
     def _curve_temp_bounds(self):
+        """Return the active temperature range for the selected curve."""
+
         curve = self._selected_curve()
         if curve is None or not curve.points:
             return TEMP_MIN, TEMP_MAX
@@ -757,6 +855,8 @@ class LiquidGUI:
         return start, end
 
     def _point_to_canvas(self, temp, duty):
+        """Convert a curve-space point into canvas coordinates."""
+
         width, height, margin = self._curve_geometry()
         start, end = self._curve_temp_bounds()
         usable_width = width - margin["left"] - margin["right"]
@@ -766,6 +866,8 @@ class LiquidGUI:
         return x, y
 
     def _canvas_to_point(self, x, y):
+        """Convert canvas coordinates back into curve-space values."""
+
         width, height, margin = self._curve_geometry()
         start, end = self._curve_temp_bounds()
         usable_width = width - margin["left"] - margin["right"]
@@ -775,6 +877,8 @@ class LiquidGUI:
         return int(round(temp)), int(round(duty))
 
     def _draw_curve(self):
+        """Redraw the current Bezier curve, grid, and draggable control points."""
+
         self.canvas.delete("all")
         curve = self._selected_curve()
         if curve is None:
@@ -814,6 +918,8 @@ class LiquidGUI:
                 self.canvas.create_oval(x - 4, y - 4, x + 4, y + 4, outline="#ffffff")
 
     def _on_canvas_press(self, event):
+        """Start dragging the nearest control point under the cursor."""
+
         curve = self._selected_curve()
         if curve is None:
             return
@@ -830,6 +936,8 @@ class LiquidGUI:
         self._draw_curve()
 
     def _on_canvas_drag(self, event):
+        """Move the active point and propagate Y-axis constraints across the curve."""
+
         curve = self._selected_curve()
         if curve is None or self.drag_index is None:
             return
@@ -876,10 +984,14 @@ class LiquidGUI:
         self._draw_curve()
 
     def _on_canvas_release(self, _event):
+        """End an active drag operation and redraw without a selection ring."""
+
         self.drag_index = None
         self._draw_curve()
 
     def _apply_curve_to_control(self, control):
+        """Evaluate the control curve at CPU temperature and apply the result."""
+
         curve = self.curves.get_curve(control)
         if not curve.enabled:
             return None
@@ -893,6 +1005,8 @@ class LiquidGUI:
         return duty
 
     def _apply_selected_curve(self):
+        """Apply the selected curve to its current control target."""
+
         control = self._selected_control()
         if control is None:
             return
@@ -910,6 +1024,8 @@ class LiquidGUI:
         self.auto_status_var.set(f"Applied {duty}% to {control.label}")
 
     def _apply_all_curves(self):
+        """Apply every enabled control curve in the current snapshot."""
+
         if not self.controls:
             return
 
@@ -929,6 +1045,8 @@ class LiquidGUI:
             self.auto_status_var.set("No enabled curves to apply")
 
     def _auto_apply_if_needed(self):
+        """Throttle automatic curve application to the refresh cadence."""
+
         now = time.monotonic()
         if now - self.last_auto_apply_at < REFRESH_SECONDS - 0.25:
             return
@@ -942,12 +1060,16 @@ class LiquidGUI:
         self.last_auto_apply_at = now
 
     def _set_status_text(self, text):
+        """Replace the contents of the sensor summary text widget."""
+
         self.status_text.config(state=tk.NORMAL)
         self.status_text.delete("1.0", tk.END)
         self.status_text.insert(tk.END, text)
         self.status_text.config(state=tk.DISABLED)
 
     def close(self):
+        """Persist current UI state and close the application window."""
+
         self.curves.auto_apply = self.auto_apply_var.get()
         self.curves.selected_key = self.selected_key
         self.curves.save()
@@ -955,15 +1077,21 @@ class LiquidGUI:
 
 
 def run_gui():
+    """Start the Tk GUI using the default sensor backend."""
+
     root = tk.Tk()
     LiquidGUI(root, SensorBackend())
     root.mainloop()
 
 
 def run_dev_reloader():
+    """Restart the GUI process whenever watched local files change."""
+
     watch_paths = [Path(__file__).with_name(name) for name in WATCH_FILES]
 
     def snapshot_mtimes():
+        """Capture modification times for the watched source files."""
+
         current = {}
         for path in watch_paths:
             if path.exists():
@@ -988,6 +1116,8 @@ def run_dev_reloader():
 
 
 def parse_args(argv=None):
+    """Parse command-line flags for normal, dump, and dev-reload modes."""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--dev", action="store_true", help="Restart the GUI when local Python files change.")
     parser.add_argument("--dump-detect", action="store_true", help="Print detected sensors and controls as JSON.")
@@ -996,6 +1126,8 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    """Application entry point for GUI, dump-detect, or dev-reload execution."""
+
     args = parse_args(argv)
     backend = SensorBackend()
 
