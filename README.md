@@ -39,11 +39,13 @@ Print detected sensors and controls without opening the GUI:
 
 ## Build and install
 
-Compile a single-file binary with PyInstaller:
+Compile a single-file binary with PyInstaller: 
+Prerequisite: PyInstaller install with arch `yay -S pyinstaller`
 
 ```bash
 make binary
 ```
+
 
 That produces `dist/liquidgui`.
 
